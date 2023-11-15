@@ -1,4 +1,5 @@
 library(vroom)
+library(tidymodels)
 library(dplyr)
 library(ggplot2)
 library(patchwork)
@@ -37,3 +38,44 @@ acf4 <- train %>%
 (acf1 + acf2) / (acf3 + acf4)
 
 ggsave("acfplots.pdf", height = 8, width = 12)
+
+
+# Time Series feature engineering
+train <- train %>%
+  filter(store == 6, item == 27) %>%
+  select(-store, -item)
+
+recipe <- recipe(sales ~ ., data = train) %>%
+  step_date(date, features = "dow") %>%
+  step_date(date, features = "doy") %>%
+  step_date(date, features = "year") %>%
+  step_range(date_doy, min = 0, max = pi) %>%
+  step_mutate(cosday = cos(date_doy)) %>%
+  step_rm(date) %>%
+  step_normalize(all_numeric_predictors())
+
+model <- rand_forest(mtry = tune(),
+                     min_n = tune(),
+                     trees = 500) %>%
+  set_engine("ranger") %>%
+  set_mode("regression")
+
+wf <- workflow() %>%
+  add_recipe(recipe) %>%
+  add_model(model)
+
+grid <- grid_regular(mtry(range = c(1, 10)), min_n(), levels = 3)  
+
+folds <- vfold_cv(train, v = 5, repeats = 1)
+
+results <- wf %>%
+  tune_grid(resamples = folds,
+            grid = grid,
+            metrics = metric_set(smape))
+
+best <- results %>%
+  select_best("smape")
+
+collect_metrics(results) %>%
+  filter(mtry == 10, min_n == 40) %>%
+  pull(mean)
