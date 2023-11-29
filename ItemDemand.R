@@ -153,6 +153,10 @@ plotly::subplot(es1, es3, es2, es4, nrows = 2)
 arima_recipe <- recipe(sales ~ ., data = train) %>%
   step_rm(store, item)
 
+test1 <- test %>% filter(store == 4, item == 20)
+
+test2 <- test %>% filter(store == 7, item == 40)
+
 arima_model <- arima_reg(seasonal_period=365,
                          non_seasonal_ar=5, # default max p to tune
                          non_seasonal_ma=5, # default max q to tune
@@ -177,13 +181,19 @@ results1 <- modeltime_calibrate(arima_wf1, new_data = testing(split1))
 
 results2 <- modeltime_calibrate(arima_wf2, new_data = testing(split2))
 
+fullfit1 <- results1 %>%
+  modeltime_refit(data = train1)
+
+fullfit2 <- results2 %>%
+  modeltime_refit(data = train2)
+
 arima1 <- results1 %>%
   modeltime_forecast(new_data = testing(split1),
                      actual_data = train1) %>%
   plot_modeltime_forecast(.interactive=TRUE)
 
-arima2 <- results1 %>%
-  modeltime_forecast(h = "3 months", actual_data = train1) %>%
+arima2 <- fullfit1 %>%
+  modeltime_forecast(new_data = test1, actual_data = train1) %>%
   plot_modeltime_forecast(.interactive=FALSE)
 
 arima3 <- results2 %>%
@@ -191,8 +201,49 @@ arima3 <- results2 %>%
                      actual_data = train2) %>%
   plot_modeltime_forecast(.interactive=TRUE)
 
-arima4 <- results2 %>%
-  modeltime_forecast(h = "3 months", actual_data = train2) %>%
+arima4 <- fullfit2 %>%
+  modeltime_forecast(new_data = test2, actual_data = train2) %>%
   plot_modeltime_forecast(.interactive=FALSE)
 
 plotly::subplot(arima1, arima3, arima2, arima4, nrows = 2)
+
+
+# Prophet
+prophet_model1 <- prophet_reg() %>%
+  set_engine(engine = "prophet") %>%
+  fit(sales ~ date, data = training(split1))
+
+results1 <- modeltime_calibrate(prophet_model1, new_data = testing(split1))
+
+fullfit1 <- results1 %>%
+  modeltime_refit(train1)
+
+prophet1 <- results1 %>%
+  modeltime_forecast(new_data = testing(split1),
+                     actual_data = train1) %>%
+  plot_modeltime_forecast(.interactive=TRUE)
+
+prophet2 <- fullfit1 %>%
+  modeltime_forecast(h = "3 months", actual_data = train1) %>%
+  plot_modeltime_forecast(.interactive=FALSE)
+
+prophet_model2 <- prophet_reg() %>%
+  set_engine(engine = "prophet") %>%
+  fit(sales ~ date, data = training(split2))
+
+results2 <- modeltime_calibrate(prophet_model2, new_data = testing(split2))
+
+fullfit2 <- results2 %>%
+  modeltime_refit(train2)
+
+prophet3 <- results2 %>%
+  modeltime_forecast(new_data = testing(split2),
+                     actual_data = train2) %>%
+  plot_modeltime_forecast(.interactive=TRUE)
+
+prophet4 <- fullfit2 %>%
+  modeltime_forecast(h = "3 months", actual_data = train2) %>%
+  plot_modeltime_forecast(.interactive=FALSE)
+
+plotly::subplot(prophet1, prophet3, prophet2, prophet4, nrows = 2)
+
