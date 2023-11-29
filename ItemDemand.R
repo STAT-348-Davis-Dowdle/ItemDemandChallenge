@@ -3,6 +3,9 @@ library(tidymodels)
 library(dplyr)
 library(ggplot2)
 library(patchwork)
+library(modeltime)
+library(timetk)
+library(forecast)
 
 setwd("C:/Users/davis/OneDrive - Brigham Young University/Documents/skool/new/stat 348/StoreItemDemand/ItemDemandChallenge")
 
@@ -79,3 +82,117 @@ best <- results %>%
 collect_metrics(results) %>%
   filter(mtry == 10, min_n == 40) %>%
   pull(mean)
+
+
+# Exponential smoothing
+# Combo 1
+train1 <- train %>% filter(store == 4, item == 20)
+
+split1 <- time_series_split(train1, assess = "3 months", cumulative = TRUE)
+
+es_model1 <- exp_smoothing() %>%
+  set_engine("ets") %>%
+  fit(sales ~ date, data = training(split1))
+
+results1 <- modeltime_calibrate(es_model1, new_data = testing(split1))
+
+fullfit1 <- results1 %>%
+  modeltime_refit(train1)
+
+es_preds1 <- fullfit1 %>%
+  modeltime_forecast(h = "3 months") %>%
+  rename(date=.index, sales=.value) %>%
+  select(date, sales) %>%
+  full_join(., y=test, by="date") %>%
+  select(id, sales)
+
+# Combo 2
+train2 <- train %>% filter(store == 7, item == 40)
+
+split2 <- time_series_split(train2, assess = "3 months", cumulative = TRUE)
+
+es_model2 <- exp_smoothing() %>%
+  set_engine("ets") %>%
+  fit(sales ~ date, data = training(split2))
+
+results2 <- modeltime_calibrate(es_model2, new_data = testing(split2))
+
+fullfit2 <- results2 %>%
+  modeltime_refit(train2)
+
+es_preds2 <- fullfit2 %>%
+  modeltime_forecast(h = "3 months") %>%
+  rename(date=.index, sales=.value) %>%
+  select(date, sales) %>%
+  full_join(., y=test, by="date") %>%
+  select(id, sales)
+
+# Plots
+es1 <- results1 %>%
+  modeltime_forecast(new_data = testing(split1),
+                     actual_data = train1) %>%
+  plot_modeltime_forecast(.interactive=TRUE)
+
+es2 <- fullfit1 %>%
+  modeltime_forecast(h = "3 months", actual_data = train1) %>%
+  plot_modeltime_forecast(.interactive=FALSE)
+
+es3 <- results2 %>%
+  modeltime_forecast(new_data = testing(split2),
+                     actual_data = train2) %>%
+  plot_modeltime_forecast(.interactive=TRUE)
+
+es4 <- fullfit2 %>%
+  modeltime_forecast(h = "3 months", actual_data = train2) %>%
+  plot_modeltime_forecast(.interactive=FALSE)
+
+plotly::subplot(es1, es3, es2, es4, nrows = 2)
+
+
+# ARIMA
+arima_recipe <- recipe(sales ~ ., data = train) %>%
+  step_rm(store, item)
+
+arima_model <- arima_reg(seasonal_period=365,
+                         non_seasonal_ar=5, # default max p to tune
+                         non_seasonal_ma=5, # default max q to tune
+                         seasonal_ar=2, # default max P to tune
+                         seasonal_ma=2, #default max Q to tune
+                         non_seasonal_differences=2, # default max d to tune
+                         seasonal_differences=2 #default max D to tune
+                         ) %>%
+  set_engine("auto_arima")
+
+arima_wf1 <- workflow() %>%
+  add_recipe(arima_recipe) %>%
+  add_model(arima_model) %>%
+  fit(data = training(split1))
+
+arima_wf2 <- workflow() %>%
+  add_recipe(arima_recipe) %>%
+  add_model(arima_model) %>%
+  fit(data = training(split2))
+
+results1 <- modeltime_calibrate(arima_wf1, new_data = testing(split1))
+
+results2 <- modeltime_calibrate(arima_wf2, new_data = testing(split2))
+
+arima1 <- results1 %>%
+  modeltime_forecast(new_data = testing(split1),
+                     actual_data = train1) %>%
+  plot_modeltime_forecast(.interactive=TRUE)
+
+arima2 <- results1 %>%
+  modeltime_forecast(h = "3 months", actual_data = train1) %>%
+  plot_modeltime_forecast(.interactive=FALSE)
+
+arima3 <- results2 %>%
+  modeltime_forecast(new_data = testing(split2),
+                     actual_data = train2) %>%
+  plot_modeltime_forecast(.interactive=TRUE)
+
+arima4 <- results2 %>%
+  modeltime_forecast(h = "3 months", actual_data = train2) %>%
+  plot_modeltime_forecast(.interactive=FALSE)
+
+plotly::subplot(arima1, arima3, arima2, arima4, nrows = 2)
